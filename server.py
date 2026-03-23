@@ -1,47 +1,80 @@
 import socket
-
+import select
 
 def run_server():
-    # create a socket object
-    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
     server_ip = "127.0.0.1"
     port = 8000
 
-    # bind the socket to a specific address and port
-    server.bind((server_ip, port))
-    # listen for incoming connections
-    server.listen(0)
-    print(f"Listening on {server_ip}:{port}")
+    # Creación del socket del servidor
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    # Permite reusar el puerto inmediatamente si el servidor se reinicia
+    server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    
+    server_socket.bind((server_ip, port))
+    server_socket.listen()
 
-    # accept incoming connections
-    client_socket, client_address = server.accept()
-    print(f"Accepted connection from {client_address[0]}:{client_address[1]}")
+    # Mantené una lista activa de conexiones 
+    # Se inicializa con el socket del servidor para escuchar nuevas conexiones
+    sockets_list = [server_socket]
 
-    # receive data from the client
-    while True:
-        request = client_socket.recv(1024)
-        request = request.decode("utf-8") # convert bytes to string
-        
-        # if we receive "close" from the client, then we break
-        # out of the loop and close the conneciton
-        if request.lower() == "close":
-            # send response to the client which acknowledges that the
-            # connection should be closed and break out of the loop
-            client_socket.send("closed".encode("utf-8"))
-            break
+    print(f"Servidor escuchando en {server_ip}:{port}")
 
-        print(f"Received: {request}")
+    try:
+        while True:
+            # select() bloquea hasta que al menos un socket esté listo para lectura
+            read_sockets, _, exception_sockets = select.select(sockets_list, [], sockets_list)
 
-        response = "accepted".encode("utf-8") # convert string to bytes
-        # convert and send accept response to the client
-        client_socket.send(response)
+            for notified_socket in read_sockets:
+                # Si el socket notificado es el servidor, hay una nueva conexión entrante
+                if notified_socket == server_socket:
+                    client_socket, client_address = server_socket.accept()
+                    sockets_list.append(client_socket)
+                    print(f"Nueva conexión de {client_address[0]}:{client_address[1]}")
+                
+                # Si es un socket de cliente, está enviando un mensaje
+                else:
+                    try:
+                        message = notified_socket.recv(1024)
+                        
+                        # Si recv() devuelve 0 bytes, el cliente se desconectó
+                        if not message:
+                            print(f"Conexión cerrada por {notified_socket.getpeername()}")
+                            sockets_list.remove(notified_socket) # Si alguien se va, borralo 
+                            notified_socket.close()
+                            continue
+                        
+                        print(f"Mensaje recibido de {notified_socket.getpeername()}")
+                        
+                        # Implementá broadcast: si un cliente habla, todos escuchan 
+                        dead_clients=[]
+                        for client in sockets_list:
+                            # Enviar a todos excepto al servidor y al emisor original
+                            if client != server_socket and client != notified_socket:
+                                try:
+                                    client.send(message)
+                                except Exception:
+                                    # Detectá cuando un socket está muerto y sacalo de la lista
+                                    
+                                    dead_clients.append(client)
+                        for clietn in dead_clients:
+                            sockets_list.remove(clietn)
+                            client.close()
+                                    
+                    except Exception as e:
+                        # Manejá desconexiones inesperadas con elegancia [cite: 50]
+                        print(f"Error recibiendo mensaje: {e}")
+                        sockets_list.remove(notified_socket)
+                        notified_socket.close()
 
-    # close connection socket with the client
-    client_socket.close()
-    print("Connection to client closed")
-    # close server socket
-    server.close()
+            # Manejo de sockets con excepciones
+            for notified_socket in exception_sockets:
+                sockets_list.remove(notified_socket)
+                notified_socket.close()
 
+    except KeyboardInterrupt:
+        print("\nApagando el servidor...")
+    finally:
+        server_socket.close()
 
-run_server()
+if __name__ == "__main__":
+    run_server()
