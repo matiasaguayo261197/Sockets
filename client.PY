@@ -3,70 +3,75 @@ import threading
 import sys
 import time
 
-def escuchar_servidor(client_socket):
+def escuchar_al_servidor(socket_del_cliente):
+    """Hilo secundario dedicado únicamente a imprimir en pantalla lo que llega del servidor."""
     while True:
         try:
-            # Recibe los mensajes en tiempo real [cite: 48]
-            mensaje = client_socket.recv(1024)
+            mensaje_recibido = socket_del_cliente.recv(1024)
             
-            # Si el servidor cae, recv devuelve 0 bytes
-            if not mensaje:
+            if not mensaje_recibido:
                 print("\n[!] El servidor cerró la conexión.")
                 break
                 
-            print(f"\n[Chat]: {mensaje.decode('utf-8')}")
+            texto_decodificado = mensaje_recibido.decode('utf-8')
+            print(f"\n[Chat]: {texto_decodificado}")
             print("> Escribí tu mensaje: ", end="", flush=True)
             
-        except Exception as e:
-            # Manejo de error si el socket muere abruptamente 
+        except Exception as error_de_lectura:
+            print(f"\n[!] Desconexión abrupta: {error_de_lectura}")
             break
             
-    # Cierra el socket de este lado para que el hilo principal se entere
-    client_socket.close()
+    socket_del_cliente.close()
 
-def run_client():
-    server_ip = "127.0.0.1"
-    server_port = 8000
+def iniciar_cliente_chat():
+    ip_del_servidor = "127.0.0.1"
+    puerto_del_servidor = 8000
 
-    # Bucle principal para implementar reintentos 
+    # Bucle principal para implementar reintentos si algo falla [cite: 50]
     while True:
-        client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        print(f"[*] Intentando conectar a {server_ip}:{server_port}...")
+        socket_del_cliente = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        print(f"[*] Intentando conectar a {ip_del_servidor}:{puerto_del_servidor}...")
         
         try:
-            client_socket.connect((server_ip, server_port))
+            socket_del_cliente.connect((ip_del_servidor, puerto_del_servidor))
             print("[*] Conectado exitosamente. El chat está vivo.")
-        except Exception as e:
-            print(f"[!] Fallo al conectar. Reintentando en 3 segundos... ")
+        except Exception:
+            print(f"[!] Fallo al conectar. Reintentando en 3 segundos...")
             time.sleep(3)
             continue
 
-        # Inicia un hilo daemon para escuchar sin bloquear el input del usuario 
-        hilo_escucha = threading.Thread(target=escuchar_servidor, args=(client_socket,))
-        hilo_escucha.daemon = True 
-        hilo_escucha.start()
+        # Inicia un hilo daemon para escuchar sin bloquear la entrada del usuario 
+        hilo_receptor_de_mensajes = threading.Thread(
+            target=escuchar_al_servidor, 
+            args=(socket_del_cliente,)
+        )
+        hilo_receptor_de_mensajes.daemon = True 
+        hilo_receptor_de_mensajes.start()
 
         try:
             while True:
-                # El input bloquea este hilo, pero el hilo_escucha sigue activo 
-                msg = input("> Escribí tu mensaje: ")
+                # El hilo principal se queda aquí, esperando que el usuario escriba
+                texto_del_usuario = input("> Escribí tu mensaje: ")
                 
-                if msg.lower() == 'salir':
+                if texto_del_usuario.lower() == 'salir':
                     print("Saliendo del chat...")
                     sys.exit(0)
                     
-                # Si el socket se cerró en el otro hilo, salimos para reconectar
-                if client_socket.fileno() == -1:
+                if socket_del_cliente.fileno() == -1:
                     break
                     
-                client_socket.send(msg.encode("utf-8")[:1024])
+                mensaje_codificado = texto_del_usuario.encode("utf-8")[:1024]
+                socket_del_cliente.send(mensaje_codificado)
                 
-        except Exception as e:
-            print(f"[!] Error de red: {e}")
+        except KeyboardInterrupt:
+            print("\nCerrando terminal de chat...")
+            sys.exit(0)
+        except Exception as error_de_red:
+            print(f"[!] Error de red: {error_de_red}")
         finally:
-            client_socket.close()
-            print("[*] Conexión perdida. Reiniciando ciclo... ")
+            socket_del_cliente.close()
+            print("[*] Conexión perdida. Reiniciando ciclo...")
             time.sleep(2)
 
 if __name__ == "__main__":
-    run_client()
+    iniciar_cliente_chat()

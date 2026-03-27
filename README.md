@@ -1,17 +1,30 @@
-# [cite_start]Challenge 4: Reconstrucción de la Comunicación Global [cite: 3, 36]
+# 🌐 Protocolo Cero: Chat en Tiempo Real con Sockets
 
-## [cite_start]¿Quién sos después de este reto? [cite: 21, 54]
-[cite_start]Soy Matías, un desarrollador que dejó de depender de bibliotecas de lujo y frameworks mágicos [cite: 5, 38] para entender cómo fluyen realmente los bytes. Ahora comprendo la capa de transporte (TCP), la multiplexación de sockets y cómo gestionar la concurrencia a bajo nivel usando la API del sistema operativo.
+Un sistema de comunicación de terminal a terminal construido desde cero, utilizando puramente la biblioteca estándar de Python (`socket`, `threading`, `select`). Sin frameworks mágicos ni dependencias externas. 
 
-## [cite_start]¿Cómo sobrevivió tu aplicación? [cite: 21, 54]
-La aplicación se mantuvo estable aplicando tres conceptos clave:
-1. [cite_start]**Concurrencia con Selectores en el Servidor:** Utilizando la función `select` [cite: 12, 45][cite_start], el servidor es capaz de monitorear múltiples descriptores de archivo simultáneamente en un solo bucle, evitando el uso excesivo de hilos y sin explotar la CPU[cite: 8, 41].
-2. [cite_start]**Eliminación Diferida (Deferred Deletion):** Para evitar bugs de desplazamiento al iterar, el broadcast se realiza sobre la lista de sockets activos y, si ocurre un fallo, los clientes desconectados se agrupan en una lista temporal (`dead_clients`) para ser eliminados de forma segura una vez finalizado el ciclo[cite: 13, 14, 46].
-3. **Multihilo en el Cliente:** Se implementó `threading` para separar la lectura del teclado (`stdin`) de la recepción de datos del socket. [cite_start]Esto garantiza que el usuario pueda escribir y ver mensajes en tiempo real, sin lag[cite: 15, 16, 48, 49].
+Este proyecto demuestra la capacidad de gestionar concurrencia, implementar lógica de broadcast y sobrevivir a desconexiones abruptas en un entorno de red inestable.
 
-## [cite_start]¿Qué aprendiste cuando todo se rompió? [cite: 22, 55]
-[cite_start]Que la red es inestable por naturaleza y hay que programar asumiendo el caos[cite: 10, 43]. Aprendí que:
-* [cite_start]Cuando la función `recv()` devuelve 0 bytes, significa que el cliente cerró la conexión abruptamente y el socket está muerto[cite: 18, 51].
-* Iterar y modificar una lista al mismo tiempo rompe el flujo del programa.
-* [cite_start]Capturar excepciones de red (como `ConnectionResetError`) y limpiar los recursos con elegancia es lo que mantiene vivo al servidor aunque la mitad de los clientes se desconecte[cite: 17, 20, 50, 53].
-* [cite_start]Los reintentos de conexión automáticos en el cliente son esenciales para recuperarse de caídas temporales del servidor[cite: 19, 52].
+---
+
+## 📜 Entregables: Respuestas al Challenge
+
+### [cite_start]¿Quién sos después de este reto? [cite: 78]
+Un desarrollador full-stack junior que ahora entiende que la red no es magia negra, sino un entorno hostil donde las conexiones pueden fallar en cualquier milisegundo. Antes daba por sentado que los mensajes de una web app simplemente llegaban a su destino gracias a los frameworks de alto nivel; ahora entiendo el trabajo sucio que ocurre por debajo: mantener los puertos abiertos, gestionar los bloqueos de I/O y limpiar la memoria a mano cuando los nodos desaparecen.
+
+### [cite_start]¿Cómo sobrevivió tu aplicación? [cite: 79]
+Sobrevivió gracias a una arquitectura estrictamente defensiva y a la separación de responsabilidades:
+* **En el Servidor:** La aplicación nunca confía ciegamente en que un envío de datos (`send`) será exitoso. Todo intento de comunicación está envuelto en bloques `try/except`. Si un cliente colapsa, el servidor captura el error, aísla el socket roto en una lista temporal y lo purga de las conexiones activas sin detener el ciclo de multiplexación que atiende a los demás.
+* **En el Cliente:** El programa sobrevive separando la lectura y la escritura. Un hilo demonio (`daemon thread`) se encarga de escuchar los mensajes del servidor en segundo plano, evitando que la función bloqueante `input()` congele la recepción de datos. Además, implementa un bucle infinito que reintenta la conexión automáticamente si el servidor principal se cae.
+
+### [cite_start]¿Qué aprendiste cuando todo se rompió? [cite: 79]
+Aprendí tres lecciones fundamentales sobre el caos en la red:
+1.  **La concurrencia es obligatoria:** Enviar y recibir datos en un solo hilo bloquea la terminal. Si no delegas la escucha a procesos paralelos o selectores, tu chat se convierte en un sistema por turnos.
+2.  **Nunca iterar y eliminar al mismo tiempo:** Intentar borrar un socket desconectado de la misma lista que el servidor está recorriendo para hacer un broadcast desincroniza los índices y corrompe el programa. 
+3.  **Los cierres limpios son un mito:** Rara vez un cliente avisa que se va a desconectar. El servidor debe estar preparado para interpretar un paquete de `0 bytes` o un error `Broken Pipe` como una señal de salida, manejándolo con elegancia para que el sistema siga operando.
+
+---
+
+## 🛠️ Ejecución
+
+1. Levantar el servidor en una terminal: `python server.py`
+2. Conectar N cantidad de clientes en terminales separadas: `python client.py`
